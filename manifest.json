@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Similar Sighting",
+  "version": "1.0.0",
+  "description": "Extract keywords from HSD pages and search similar sightings in HSD-ES.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting",
+    "storage",
+    "sidePanel",
+    "clipboardRead"
+  ],
+  "host_permissions": [
+    "https://hsdes.intel.com/*",
+    "https://*.hsdes.intel.com/*",
+    "https://expertgpt.intel.com/*"
+  ],
+  "action": {
+    "default_title": "Similar Sighting"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

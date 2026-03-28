@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Similar Sighting - Settings</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid #e2e8f0;
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+    .sub {
+      color: #475569;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .hint {
+      margin-top: 6px;
+      color: #64748b;
+      font-size: 12px;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #334155;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Similar Sighting Settings</h1>
+    <div class="sub">設定自動取得 keyword 的數量。</div>
+
+    <div class="field">
+      <label for="keywordCount">Keyword 預設數量</label>
+      <input id="keywordCount" type="number" min="1" max="10" step="1" value="3" />
+      <div class="hint">預設為 3。載入 HSD 頁面時，會自動抓取這個數量的 keywords。</div>
+    </div>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    const MESSAGE_TYPES = {
+      GET_SETTINGS: "GET_SETTINGS",
+      SAVE_SETTINGS: "SAVE_SETTINGS"
+    };
+
+    const UI = {
+      keywordCount: document.getElementById("keywordCount"),
+      status: document.getElementById("status")
+    };
+
+    function setStatus(text, isError = false) {
+      UI.status.textContent = text;
+      UI.status.style.color = isError ? "#991b1b" : "#334155";
+    }
+
+    function sendRuntimeMessage(payload) {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage(payload, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message || "runtime error" });
+            return;
+          }
+          resolve(response || { ok: false, error: "no response" });
+        });
+      });
+    }
+
+    async function loadSettings() {
+      const response = await sendRuntimeMessage({ type: MESSAGE_TYPES.GET_SETTINGS });
+      if (!response.ok) {
+        setStatus(`載入設定失敗: ${response.error}`, true);
+        return;
+      }
+
+      const settings = response.settings || {};
+      UI.keywordCount.value = settings.keywordCount || 3;
+      setStatus("設定已載入");
+    }
+
+    async function saveSettings() {
+      const keywordCount = Math.max(1, Math.min(10, Math.round(Number(UI.keywordCount.value) || 3)));
+      UI.keywordCount.value = String(keywordCount);
+
+      // Write directly first to avoid any service-worker timing race.
+      await chrome.storage.local.set({ keywordCount });
+
+      const response = await sendRuntimeMessage({
+        type: MESSAGE_TYPES.SAVE_SETTINGS,
+        settings: { keywordCount }
+      });
+
+      if (!response.ok) {
+        setStatus(`儲存失敗: ${response.error}`, true);
+        return;
+      }
+
+      setStatus(`設定已自動儲存 (${keywordCount})`);
+    }
+
+    UI.keywordCount.addEventListener("input", saveSettings);
+    UI.keywordCount.addEventListener("change", saveSettings);
+    UI.keywordCount.addEventListener("blur", saveSettings);
+
+    loadSettings();
+  </script>
+</body>
+</html>

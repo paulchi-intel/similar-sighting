@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Similar Sighting</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+      background: #f3f4f6;
+      color: #1f2937;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header-bar {
+      background: linear-gradient(135deg, #0f766e 0%, #0ea5e9 100%);
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      gap: 8px;
+    }
+    .title-btn {
+      border: none;
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 0;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .title-btn:hover { opacity: 0.9; }
+    .header-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .header-btn {
+      padding: 6px 12px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: white;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .header-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .header-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .model-selector,
+    .language-selector {
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+      border-radius: 8px;
+      padding: 5px 20px 5px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 60px;
+    }
+    .model-selector {
+      min-width: 140px;
+    }
+    .language-selector {
+      min-width: 68px;
+      width: 68px;
+    }
+    .model-selector option,
+    .language-selector option {
+      color: #1f2937;
+    }
+    .container {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      flex: 1;
+    }
+    .status-bar {
+      padding: 8px 16px;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 12px;
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      flex-shrink: 0;
+    }
+    .status-indicator.loading {
+      background: #f59e0b;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .status-indicator.error {
+      background: #ef4444;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #0f172a;
+    }
+    .meta {
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .keyword-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 2px;
+    }
+    .keyword-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .keyword-input {
+      flex: 1;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .remove-btn {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+      min-width: 34px;
+      padding: 8px;
+    }
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .add-btn {
+      background: #ecfeff;
+      color: #0f766e;
+      border: 1px solid #99f6e4;
+    }
+    .primary-btn {
+      background: #0284c7;
+      color: #fff;
+      width: 100%;
+      font-weight: 700;
+      padding: 10px 12px;
+      flex-shrink: 0;
+    }
+    .primary-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .load-buttons-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .load-buttons-container .primary-btn {
+      width: 100%;
+      margin: 0;
+    }
+    .hint { font-size: 11px; color: #64748b; margin-top: 8px; }
+
+    .page-info {
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      display: none;
+    }
+    .page-info.show {
+      display: block;
+    }
+    .page-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .page-url {
+      font-size: 11px;
+      color: #6b7280;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 0;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .modal-close:hover {
+      background: #f3f4f6;
+      color: #1f2937;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .modal-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #1f2937;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .modal-input:focus {
+      border-color: #0ea5e9;
+      box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+    }
+    .modal-hint {
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .modal-actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .modal-btn-cancel {
+      padding: 8px 16px;
+      border: 1px solid #d1d5db;
+      background: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #374151;
+      transition: background 0.2s;
+    }
+    .modal-btn-cancel:hover {
+      background: #f3f4f6;
+    }
+    .modal-btn-confirm {
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #0f766e 0%, #0ea5e9 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .modal-btn-confirm:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-bar">
+    <button id="titleBtn" class="title-btn">🔑 Similar Sighting</button>
+    <div class="header-controls">
+      <button id="clearBtn" class="header-btn" data-i18n="clear">清除</button>
+      <select id="modelSelect" class="model-selector"></select>
+      <select id="languageSelect" class="language-selector">
+        <option value="zh-TW">繁</option>
+        <option value="zh-CN">简</option>
+        <option value="en">EN</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="status-indicator" id="statusIndicator"></span>
+    <span id="statusText" data-i18n="status-ready">準備就緒，請先在 HSD 頁面按「載入 HSD」。</span>
+  </div>
+
+  <div class="page-info" id="pageInfo">
+    <div class="page-title" id="pageTitle"></div>
+  </div>
+
+  <div class="container">
+    <div class="load-buttons-container" id="loadButtonsContainer">
+      <button id="reloadBtn" class="primary-btn" data-i18n="load-hsd">載入 HSD</button>
+      <button id="loadClipboardBtn" class="primary-btn" data-i18n="load-clipboard">載入剪貼簿</button>
+    </div>
+
+    <div class="content-section" id="contentSection" style="display:none; flex:1; flex-direction:column; gap:12px; min-height:0; overflow-y:auto;">
+      <div class="card" style="display:flex; flex-direction:column;">
+        <div class="card-title" data-i18n="keywords-title">Chat Container - Keywords</div>
+        <div id="keywordList" class="keyword-list"></div>
+        <div class="row-actions">
+          <button id="addKeywordBtn" class="add-btn" data-i18n="add-keyword">+ 新增 keyword</button>
+        </div>
+        <div class="hint" data-i18n="keywords-hint">你可以直接修改、增減 keyword，再按下搜尋。</div>
+        <button id="searchBtn" class="primary-btn" data-i18n="search-similar" style="margin-top:8px;">搜尋 Similar Sighting</button>
+        <button id="summarizeTop5Btn" class="primary-btn" style="background:#0f766e; display:none; flex-shrink:0; margin-top:8px;" data-i18n="summarize-top5">比較5筆資料</button>
+        <div class="card" id="summaryCard" style="display:none; flex-shrink:0; margin-top:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div class="card-title" data-i18n="summary-title" style="margin-bottom:0;">Sighting 比較結果</div>
+            <button id="generateReportBtn" style="display:none; font-size:10px; padding:3px 8px; background:#f0fdf4; color:#0f766e; border:1px solid #bbf7d0; border-radius:6px; cursor:pointer;" data-i18n="generate-report">整理報告</button>
+          </div>
+
+          <!-- 過濾器列 -->
+          <div id="reportFilterRow" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:8px; margin-bottom:8px; font-size:11px;">
+            <div style="display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center;">
+              <label style="display:flex; align-items:center; gap:4px;">
+                <span data-i18n="filter-similarity">相似度 ≥</span>
+                <input id="filterSimilarity" type="number" min="0" max="100" value="50" style="width:42px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
+                <span>%</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:4px;">
+                <span data-i18n="filter-platform">Platform 含</span>
+                <input id="filterPlatform" type="text" placeholder="不限" style="width:72px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
+              </label>
+              <label style="display:flex; align-items:center; gap:4px;">
+                <span data-i18n="filter-year">年份 ≥</span>
+                <input id="filterYear" type="number" min="2000" max="2099" placeholder="不限" style="width:58px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
+              </label>
+            </div>
+            <div style="display:flex; gap:6px; margin-top:6px;">
+              <button id="applyReportBtn" style="font-size:10px; padding:3px 10px; background:#0f766e; color:#fff; border:1px solid #0f766e; border-radius:6px; cursor:pointer;" data-i18n="apply-filter">套用過濾</button>
+              <button id="resetReportBtn" style="font-size:10px; padding:3px 10px; background:#fff; color:#374151; border:1px solid #d1d5db; border-radius:6px; cursor:pointer;" data-i18n="reset-filter">重設</button>
+            </div>
+          </div>
+
+          <div id="summaryList" class="meta" style="max-height:300px; overflow-y:auto;"></div>
+
+          <!-- 報告區（套用過濾後顯示） -->
+          <div id="reportArea" style="display:none;">
+            <div id="reportStats" style="font-size:11px; color:#0f766e; font-weight:600; margin-bottom:6px; padding:4px 8px; background:#f0fdf4; border-radius:6px;"></div>
+            <div id="reportList" class="meta" style="max-height:300px; overflow-y:auto;"></div>
+            <button id="copyReportBtn" style="width:100%; margin-top:8px; font-size:11px; padding:5px; background:#f8fafc; color:#0f766e; border:1px solid #bbf7d0; border-radius:6px; cursor:pointer;" data-i18n="copy-report">複製報告</button>
+          </div>
+        </div>
+      </div>
+
+
+
+    </div>
+  </div>
+
+  <div id="modelModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 data-i18n="modal-api-key-title">設定 API Key</h3>
+        <button class="modal-close" id="closeModelBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint" data-i18n="modal-api-key-hint">請輸入 API Key（以 pak_ 開頭）</p>
+        <input type="text" id="apiKeyInput" class="modal-input" placeholder="pak_..." spellcheck="false" autocomplete="off" />
+        <div class="modal-actions">
+          <button id="cancelModelBtn" class="modal-btn-cancel" data-i18n="modal-cancel">取消</button>
+          <button id="saveModelBtn" class="modal-btn-confirm" data-i18n="modal-confirm">確認</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
