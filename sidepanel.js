@@ -19,7 +19,8 @@ const DEFAULTS = {
 const COMPARE_BATCH_SIZE = 5;
 
 const STORAGE_KEYS = {
-  language: "language"
+  language: "language",
+  panelState: "panelState"
 };
 
 const TRANSLATIONS = {
@@ -463,10 +464,10 @@ function syncModelQuotasFromQuota(modelCostCap) {
   renderModelOptions();
 }
 
-function incrementModelUsage(model) {
+function incrementModelUsage(model, count = 1) {
   if (!model) return;
   const current = state.modelQuotas[model] || { used: 0, limit: 0, remaining: 0 };
-  const nextUsed = Number(current.used || 0) + 1;
+  const nextUsed = Number(current.used || 0) + count;
   const nextLimit = Number(current.limit || 0);
   state.modelQuotas[model] = { ...current, used: nextUsed, remaining: Math.max(nextLimit - nextUsed, 0) };
   renderModelOptions();
@@ -616,6 +617,7 @@ async function loadActiveHsdPage() {
     false
   );
   incrementModelUsage(state.page.selectedModel);
+  await savePanelState();
 }
 
 async function loadClipboardContent() {
@@ -691,6 +693,7 @@ async function loadClipboardContent() {
     UI.contentSection.style.display = "flex";
     renderPageMeta();
     renderKeywordList();
+    await savePanelState();
   } catch (err) {
     state.page = null;
     setStatus(t("status-load-clipboard-failed", { error: err.message }), true);
@@ -726,6 +729,7 @@ async function searchSimilarSighting() {
   UI.summarizeTop5Btn.textContent = t("summarize-top5");
   UI.summarizeTop5Btn.disabled = false;
   UI.summarizeTop5Btn.style.opacity = "1";
+  await savePanelState();
 }
 
 function clearPanel() {
@@ -750,6 +754,56 @@ function clearPanel() {
   renderPageMeta();
   renderKeywordList();
   setStatus(t("status-cleared"));
+  savePanelState();
+}
+
+async function savePanelState() {
+  const ps = {
+    page: state.page,
+    keywords: state.keywords,
+    compareBatchIndex: state.compareBatchIndex,
+    comparedItems: state.comparedItems,
+    summaryHtml: UI.summaryList.innerHTML,
+    contentSectionVisible: UI.contentSection.style.display !== "none",
+    summarizeTop5BtnVisible: UI.summarizeTop5Btn.style.display !== "none",
+    summarizeTop5BtnDisabled: UI.summarizeTop5Btn.disabled,
+    summarizeTop5BtnOpacity: UI.summarizeTop5Btn.style.opacity,
+    summarizeTop5BtnNextMode: state.compareBatchIndex > 0,
+    summaryCardVisible: UI.summaryCard.style.display !== "none",
+    generateReportBtnVisible: UI.generateReportBtn.style.display !== "none"
+  };
+  await chrome.storage.local.set({ [STORAGE_KEYS.panelState]: ps });
+}
+
+async function restorePanelState() {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.panelState);
+  const ps = result[STORAGE_KEYS.panelState];
+  if (!ps || !ps.contentSectionVisible) return;
+
+  state.page = ps.page || null;
+  state.keywords = ps.keywords || [];
+  state.compareBatchIndex = ps.compareBatchIndex || 0;
+  state.comparedItems = ps.comparedItems || [];
+
+  UI.contentSection.style.display = "flex";
+  renderPageMeta();
+  renderKeywordList();
+
+  if (ps.summarizeTop5BtnVisible) {
+    UI.summarizeTop5Btn.style.display = "block";
+    UI.summarizeTop5Btn.textContent = ps.summarizeTop5BtnNextMode ? t("summarize-next5") : t("summarize-top5");
+    UI.summarizeTop5Btn.disabled = ps.summarizeTop5BtnDisabled || false;
+    UI.summarizeTop5Btn.style.opacity = ps.summarizeTop5BtnOpacity || "1";
+  }
+
+  if (ps.summaryCardVisible && ps.summaryHtml) {
+    UI.summaryList.innerHTML = ps.summaryHtml;
+    UI.summaryCard.style.display = "block";
+  }
+
+  if (ps.generateReportBtnVisible) {
+    UI.generateReportBtn.style.display = "inline-block";
+  }
 }
 
 function parseSummaryFields(summaryText) {
@@ -762,7 +816,7 @@ function parseSummaryFields(summaryText) {
     return "";
   };
   const simRaw  = get("相似程度\\(%\\)", "Similarity\\(%\\)");
-  const createdRaw = get("Created");
+  const createdRaw = get("Submitted Date", "Created");
   const yearMatch  = createdRaw.match(/\d{4}/);
   return {
     platform:     get("Platform"),
@@ -787,6 +841,12 @@ function renderCompareSummaries(items, offset) {
     const num = offset + idx + 1;
     const fields = parseSummaryFields(item.summary || "");
 
+    if (item.submittedDate) {
+      fields.created = item.submittedDate;
+      const yearMatch = item.submittedDate.match(/\d{4}/);
+      if (yearMatch) fields.year = parseInt(yearMatch[0]);
+    }
+
     state.comparedItems.push({
       index: num,
       title: item.title || "",
@@ -800,7 +860,7 @@ function renderCompareSummaries(items, offset) {
 
     const fieldDefs = [
       ["Platform",       fields.platform],
-      ["Created",        fields.created],
+      ["Submitted Date", fields.created],
       ["Problem",        fields.problem],
       ["Status / Reason",fields.statusReason],
       ["Root Cause",     fields.rootCause],
@@ -870,16 +930,18 @@ async function summarizeTopFiveResults() {
     UI.summarizeTop5Btn.disabled = true;
     UI.summarizeTop5Btn.style.opacity = "0.5";
     setStatus(t("status-summary-all-done"));
+    await savePanelState();
     return;
   }
 
   renderCompareSummaries(items, offset);
-  incrementModelUsage(state.modelConfig.selectedModel);
+  incrementModelUsage(state.modelConfig.selectedModel, items.length);
   state.compareBatchIndex += 1;
 
   // 按鈕文字改為下一批比較，一直可以繼續按
   UI.summarizeTop5Btn.textContent = t("summarize-next5");
   setStatus(t("status-summary-done"));
+  await savePanelState();
 }
 
 function getReportFilterValues() {
@@ -902,7 +964,7 @@ function buildItemBlock(item) {
   const f = item.fields;
   const fieldDefs = [
     ["Platform",        f.platform],
-    ["Created",         f.created],
+    ["Submitted Date",  f.created],
     ["Problem",         f.problem],
     ["Status / Reason", f.statusReason],
     ["Root Cause",      f.rootCause],
@@ -947,7 +1009,7 @@ function buildReportText(filtered) {
       `#${item.index} ${item.title}`,
       `URL: ${item.url}`,
       f.platform     ? `Platform: ${f.platform}`            : "",
-      f.created      ? `Created: ${f.created}`              : "",
+      f.created      ? `Submitted Date: ${f.created}`      : "",
       f.problem      ? `Problem: ${f.problem}`              : "",
       f.statusReason ? `Status / Reason: ${f.statusReason}` : "",
       f.rootCause    ? `Root Cause: ${f.rootCause}`         : "",
@@ -1038,6 +1100,7 @@ async function init() {
   renderKeywordList();
   renderPageMeta();
   setStatus(t("status-ready"));
+  await restorePanelState();
 }
 
 init();

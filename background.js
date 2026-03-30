@@ -481,7 +481,7 @@ async function summarizeComparedToOriginal({
       "Status / Reason: <直接摘取候選 sighting 頁面中的 status 與 reason 欄位原始文字，例如 rejected / not_a_defect。若未提及則寫 Unknown>",
       "Root Cause: <根本原因，若未提及則寫 Unknown>",
       "Solution: <簡述解決方式，若未解決則寫 N/A>",
-      "Created: <從頁面中找出 sighting 的建立日期，格式 YYYY-MM-DD 或 YYYY，若未提及則寫 Unknown>",
+      "Submitted Date: <從頁面中找出 sighting 的建立日期，格式 YYYY-MM-DD 或 YYYY，若未提及則寫 Unknown>",
       "相似程度(%): <0-100 的整數>"
     ].join("\n"),
     "zh-CN": [
@@ -496,7 +496,7 @@ async function summarizeComparedToOriginal({
       "Status / Reason: <直接擷取候选 sighting 页面中的 status 与 reason 字段原始文字，例如 rejected / not_a_defect。若未提及则写 Unknown>",
       "Root Cause: <根本原因，若未提及则写 Unknown>",
       "Solution: <简述解决方式，若未解决则写 N/A>",
-      "Created: <从页面中找出 sighting 的建立日期，格式 YYYY-MM-DD 或 YYYY，若未提及则写 Unknown>",
+      "Submitted Date: <从页面中找出 sighting 的建立日期，格式 YYYY-MM-DD 或 YYYY，若未提及则写 Unknown>",
       "相似程度(%): <0-100 的整数>"
     ].join("\n"),
     en: [
@@ -510,7 +510,7 @@ async function summarizeComparedToOriginal({
       "Status / Reason: <extract the raw status and reason field values directly from the candidate sighting page, e.g. rejected / not_a_defect. If not found, write Unknown>",
       "Root Cause: <root cause if mentioned, otherwise Unknown>",
       "Solution: <brief description of fix, or N/A if unresolved>",
-      "Created: <creation date found in the sighting page, format YYYY-MM-DD or YYYY. If not found, write Unknown>",
+      "Submitted Date: <creation date found in the sighting page, format YYYY-MM-DD or YYYY. If not found, write Unknown>",
       "Similarity(%): <integer 0-100>"
     ].join("\n")
   };
@@ -962,14 +962,40 @@ async function openTabAndCaptureContent(url) {
       const title = document.title || "";
       const url = window.location.href || "";
       const text = (document.body?.innerText || "").slice(0, 20000);
-      return { title, url, text };
+
+      // Extract submitted date from the datepicker input field
+      let submittedDate = "";
+      const dateInput = document.querySelector("input[data-placeholder='submitted date']");
+      if (dateInput) {
+        submittedDate = (dateInput.value || dateInput.getAttribute("value") || "").trim();
+      }
+      // Fallback: scan innerText for submitted_date pattern
+      if (!submittedDate) {
+        const lines = text.split(/\n/);
+        for (let i = 0; i < lines.length; i++) {
+          if (/^\s*submitted_date\s*$/i.test(lines[i])) {
+            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+              const val = lines[j].trim();
+              if (val && /\d{4}/.test(val)) { submittedDate = val; break; }
+            }
+            break;
+          }
+        }
+      }
+      if (!submittedDate) {
+        const m = text.match(/submitted_date\s*[:\s]+(\d{4}[-\/]\d{2}[-\/]\d{2}|\d{4}[-\/]\d{2}|\d{4})/i);
+        if (m) submittedDate = m[1];
+      }
+
+      return { title, url, text, submittedDate };
     }
   });
 
   return {
     title: result?.title || "",
     url: result?.url || url,
-    text: result?.text || ""
+    text: result?.text || "",
+    submittedDate: result?.submittedDate || ""
   };
 }
 
@@ -1012,7 +1038,8 @@ async function summarizeTop5Results(language, offset = 0) {
       return {
         title: content.title || item.text || item.href,
         url: content.url || item.href,
-        summary
+        summary,
+        submittedDate: content.submittedDate || ""
       };
     })
   );
@@ -1025,7 +1052,8 @@ async function summarizeTop5Results(language, offset = 0) {
       items.push({
         title: "(Summary failed)",
         url: "",
-        summary: result.reason?.message || String(result.reason)
+        summary: result.reason?.message || String(result.reason),
+        submittedDate: ""
       });
     }
   }
