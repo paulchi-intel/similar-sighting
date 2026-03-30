@@ -25,6 +25,7 @@ const MESSAGE_TYPES = {
   SAVE_SETTINGS: "SAVE_SETTINGS",
   SEARCH_SIMILAR_SIGHTING: "SEARCH_SIMILAR_SIGHTING",
   SUMMARIZE_TOP5_RESULTS: "SUMMARIZE_TOP5_RESULTS",
+  SUMMARIZE_ITEM_PROGRESS: "SUMMARIZE_ITEM_PROGRESS",
   GET_MODELS: "GET_MODELS",
   GET_MODEL_CONFIG: "GET_MODEL_CONFIG",
   SAVE_MODEL_CONFIG: "SAVE_MODEL_CONFIG"
@@ -956,6 +957,25 @@ async function openTabAndCaptureContent(url) {
   await waitForTabComplete(newTab.id);
   await waitForPageContentReady(newTab.id);
 
+  // Poll until the submitted date datepicker input has a value (Angular loads it async)
+  // Wrapped in try/catch so any scripting error here does not abort the whole capture
+  try {
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      const [{ result: hasDate }] = await chrome.scripting.executeScript({
+        target: { tabId: newTab.id },
+        func: () => {
+          const inp = document.querySelector("input[data-placeholder='submitted date']");
+          return !!(inp && inp.value && inp.value.trim());
+        }
+      });
+      if (hasDate) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  } catch (_pollErr) {
+    // Polling failed (e.g. CSP / frame detach) — proceed without waiting
+  }
+
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId: newTab.id },
     func: () => {
@@ -963,13 +983,32 @@ async function openTabAndCaptureContent(url) {
       const url = window.location.href || "";
       const text = (document.body?.innerText || "").slice(0, 20000);
 
-      // Extract submitted date from the datepicker input field
+      // Method 1: direct data-placeholder selector
       let submittedDate = "";
       const dateInput = document.querySelector("input[data-placeholder='submitted date']");
-      if (dateInput) {
-        submittedDate = (dateInput.value || dateInput.getAttribute("value") || "").trim();
+      if (dateInput && dateInput.value) {
+        submittedDate = dateInput.value.trim();
       }
-      // Fallback: scan innerText for submitted_date pattern
+
+      // Method 2: any mat-form-field whose label contains "submitted"
+      if (!submittedDate) {
+        for (const field of document.querySelectorAll("mat-form-field")) {
+          const label = field.querySelector("mat-label, label, .mat-form-field-label span");
+          if (label && /submitted/i.test(label.textContent || "")) {
+            const inp = field.querySelector("input");
+            if (inp && inp.value) { submittedDate = inp.value.trim(); break; }
+          }
+        }
+      }
+
+      // Method 3: any datepicker input with a value (aria-haspopup="dialog")
+      if (!submittedDate) {
+        for (const inp of document.querySelectorAll("input[aria-haspopup='dialog']")) {
+          if (inp.value) { submittedDate = inp.value.trim(); break; }
+        }
+      }
+
+      // Method 4: scan innerText for submitted_date label -> next date-like line
       if (!submittedDate) {
         const lines = text.split(/\n/);
         for (let i = 0; i < lines.length; i++) {
@@ -982,6 +1021,8 @@ async function openTabAndCaptureContent(url) {
           }
         }
       }
+
+      // Method 5: regex over full innerText
       if (!submittedDate) {
         const m = text.match(/submitted_date\s*[:\s]+(\d{4}[-\/]\d{2}[-\/]\d{2}|\d{4}[-\/]\d{2}|\d{4})/i);
         if (m) submittedDate = m[1];
@@ -1024,41 +1065,47 @@ async function summarizeTop5Results(language, offset = 0) {
     }
   });
 
-  const settled = await Promise.allSettled(
-    batch.map(async (item) => {
-      const content = await openTabAndCaptureContent(item.href);
-      const summary = await summarizeComparedToOriginal({
-        original: originalContent,
-        target: content,
-        apiKey: modelConfig.selectedApiKey,
-        model: modelConfig.selectedModel,
-        language
-      });
+  const total = batch.length;
+  const results = new Array(total).fill(null);
 
-      return {
-        title: content.title || item.text || item.href,
-        url: content.url || item.href,
-        summary,
-        submittedDate: content.submittedDate || ""
-      };
+  await Promise.allSettled(
+    batch.map(async (item, i) => {
+      let result;
+      try {
+        const content = await openTabAndCaptureContent(item.href);
+        const summary = await summarizeComparedToOriginal({
+          original: originalContent,
+          target: content,
+          apiKey: modelConfig.selectedApiKey,
+          model: modelConfig.selectedModel,
+          language
+        });
+        result = {
+          title: content.title || item.text || item.href,
+          url: content.url || item.href,
+          summary,
+          submittedDate: content.submittedDate || ""
+        };
+      } catch (err) {
+        result = {
+          title: "(Summary failed)",
+          url: "",
+          summary: err?.message || String(err),
+          submittedDate: ""
+        };
+      }
+      results[i] = result;
+      chrome.runtime.sendMessage({
+        type: MESSAGE_TYPES.SUMMARIZE_ITEM_PROGRESS,
+        phase: "item",
+        item: result,
+        itemIndex: i,
+        offset
+      }).catch(() => {});
     })
   );
 
-  const items = [];
-  for (const result of settled) {
-    if (result.status === "fulfilled") {
-      items.push(result.value);
-    } else {
-      items.push({
-        title: "(Summary failed)",
-        url: "",
-        summary: result.reason?.message || String(result.reason),
-        submittedDate: ""
-      });
-    }
-  }
-
-  return items;
+  return results.filter(Boolean);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

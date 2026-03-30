@@ -4,6 +4,7 @@ const MESSAGE_TYPES = {
   GET_SETTINGS: "GET_SETTINGS",
   SEARCH_SIMILAR_SIGHTING: "SEARCH_SIMILAR_SIGHTING",
   SUMMARIZE_TOP5_RESULTS: "SUMMARIZE_TOP5_RESULTS",
+  SUMMARIZE_ITEM_PROGRESS: "SUMMARIZE_ITEM_PROGRESS",
   GET_MODELS: "GET_MODELS",
   GET_MODEL_CONFIG: "GET_MODEL_CONFIG",
   SAVE_MODEL_CONFIG: "SAVE_MODEL_CONFIG"
@@ -67,6 +68,8 @@ const TRANSLATIONS = {
     "summarize-next5": "比較下5筆資料",
     "summary-title": "Sighting 比较結果",
     "status-summarizing": "正在開啟第{start}到{end}筆結果並產生比较...",
+    "status-summarizing-progress": "正在比較中... ({done}/{total} 完成)",
+    "skeleton-comparing": "比較中...",
     "status-summary-done": "已完成比較，可再次按下比較下5筆",
     "status-summary-all-done": "已完成目前可比較的資料",
     "status-summary-failed": "摘要失敗: {error}",
@@ -77,6 +80,7 @@ const TRANSLATIONS = {
     "generate-report": "整理報告",
     "filter-similarity": "相似度 ≥",
     "filter-platform": "Platform 含",
+    "filter-no-limit": "不限",
     "filter-year": "年份 ≥",
     "apply-filter": "套用過濾",
     "reset-filter": "重設",
@@ -132,6 +136,8 @@ const TRANSLATIONS = {
     "summarize-next5": "总结下5个结果",
     "summary-title": "前5笔 Sighting 简洁摘要",
     "status-summarizing": "正在打开第{start}到第{end}个结果并生成简洁摘要...",
+    "status-summarizing-progress": "正在比较中... ({done}/{total} 完成)",
+    "skeleton-comparing": "比较中...",
     "status-summary-done": "已完成比较，可再次按下总结下5个结果",
     "status-summary-all-done": "已完成目前可比较的结果",
     "status-summary-failed": "摘要失败: {error}",
@@ -142,7 +148,9 @@ const TRANSLATIONS = {
     "generate-report": "整理报告",
     "filter-similarity": "相似度 ≥",
     "filter-platform": "Platform 含",
+    "filter-no-limit": "不限",
     "filter-year": "年份 ≥",
+    "batch-divider": "―― 第{start}-{end}笔 ――",
     "apply-filter": "套用过滤",
     "reset-filter": "重设",
     "copy-report": "复制报告",
@@ -197,6 +205,8 @@ const TRANSLATIONS = {
     "summarize-next5": "Summarize Next 5 Results",
     "summary-title": "Top 5 Sighting Concise Summaries",
     "status-summarizing": "Opening results {start} to {end} and generating concise summaries...",
+    "status-summarizing-progress": "Comparing... ({done}/{total} done)",
+    "skeleton-comparing": "Comparing...",
     "status-summary-done": "Summaries completed. Click to summarize the next 5 results",
     "status-summary-all-done": "All available results have been summarized",
     "status-summary-failed": "Summarization failed: {error}",
@@ -207,7 +217,9 @@ const TRANSLATIONS = {
     "generate-report": "Report",
     "filter-similarity": "Similarity ≥",
     "filter-platform": "Platform contains",
+    "filter-no-limit": "Any",
     "filter-year": "Year ≥",
+    "batch-divider": "―― Items {start}-{end} ――",
     "apply-filter": "Apply Filter",
     "reset-filter": "Reset",
     "copy-report": "Copy Report",
@@ -267,7 +279,8 @@ const state = {
   page: null,
   keywords: [],
   compareBatchIndex: 0,
-  comparedItems: []      // 每筆 { index, title, url, fields, rawSummary }
+  comparedItems: [],     // 每筆 { index, title, url, fields, rawSummary }
+  summarizeProgress: { done: 0, total: 0, offset: -1 }
 };
 
 function t(key, params = {}) {
@@ -283,6 +296,12 @@ function applyLanguage() {
     const key = el.getAttribute("data-i18n");
     if (!key) return;
     el.textContent = t(key);
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    if (!key) return;
+    el.placeholder = t(key);
   });
 
   UI.languageSelect.value = state.currentLanguage;
@@ -737,6 +756,7 @@ function clearPanel() {
   state.keywords = [];
   state.compareBatchIndex = 0;
   state.comparedItems = [];
+  state.summarizeProgress = { done: 0, total: 0, offset: -1 };
   UI.contentSection.style.display = "none";
   UI.summarizeTop5Btn.style.display = "none";
   UI.summarizeTop5Btn.textContent = t("summarize-top5");
@@ -887,13 +907,105 @@ function renderCompareSummaries(items, offset) {
   if (offset === 0) {
     UI.summaryList.innerHTML = blocks.join("");
   } else {
-    const divider = `<div style="margin:10px 0 12px; border-top:2px dashed #0f766e; text-align:center; font-size:11px; color:#0f766e; padding-top:6px;">―― 第${offset + 1}-${offset + items.length}筆 ――</div>`;
+    const divider = `<div style="margin:10px 0 12px; border-top:2px dashed #0f766e; text-align:center; font-size:11px; color:#0f766e; padding-top:6px;">${t("batch-divider", { start: offset + 1, end: offset + items.length })}</div>`;
     UI.summaryList.innerHTML += divider + blocks.join("");
   }
   UI.summaryList.style.display = "block";
   UI.reportArea.style.display = "none";
   UI.summaryCard.style.display = "block";
   UI.generateReportBtn.style.display = "inline-block";
+}
+
+function renderSkeletonCards(total, offset) {
+  const s = "background:linear-gradient(90deg,#e5e7eb 25%,#f3f4f6 50%,#e5e7eb 75%); background-size:200% 100%; animation:shimmer 1.5s ease-in-out infinite;";
+
+  if (offset === 0) {
+    UI.summaryList.innerHTML = "";
+  } else if (!document.getElementById(`batch-divider-${offset}`)) {
+    const dividerEl = document.createElement("div");
+    dividerEl.id = `batch-divider-${offset}`;
+    dividerEl.style.cssText = "margin:10px 0 12px; border-top:2px dashed #0f766e; text-align:center; font-size:11px; color:#0f766e; padding-top:6px;";
+    dividerEl.textContent = t("batch-divider", { start: offset + 1, end: offset + total });
+    UI.summaryList.appendChild(dividerEl);
+  }
+
+  for (let i = 0; i < total; i++) {
+    const elId = `compare-item-${offset + i}`;
+    if (document.getElementById(elId)) continue;
+    const num = offset + i + 1;
+    const el = document.createElement("div");
+    el.id = elId;
+    el.style.cssText = "margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #e5e7eb;";
+    el.innerHTML =
+      `<div style="font-weight:600; font-size:11px; color:#0f766e; margin-bottom:6px;">#${num}</div>` +
+      `<div style="height:11px; width:65%; border-radius:4px; ${s} margin-bottom:5px;"></div>` +
+      `<div style="height:10px; width:45%; border-radius:4px; ${s} margin-bottom:5px;"></div>` +
+      `<div style="height:10px; width:75%; border-radius:4px; ${s} margin-bottom:6px;"></div>` +
+      `<div style="font-size:11px; color:#9ca3af;">⟳ ${t("skeleton-comparing")}</div>`;
+    UI.summaryList.appendChild(el);
+  }
+
+  UI.summaryList.style.display = "block";
+  UI.reportArea.style.display = "none";
+  UI.summaryCard.style.display = "block";
+  UI.generateReportBtn.style.display = "none";
+}
+
+function insertCompareItem(item, itemIndex, offset) {
+  const num = offset + itemIndex + 1;
+  const fields = parseSummaryFields(item.summary || "");
+  if (item.submittedDate) {
+    fields.created = item.submittedDate;
+    const ym = item.submittedDate.match(/\d{4}/);
+    if (ym) fields.year = parseInt(ym[0]);
+  }
+
+  // Ensure slot exists
+  while (state.comparedItems.length <= offset + itemIndex) state.comparedItems.push(null);
+  state.comparedItems[offset + itemIndex] = {
+    index: num,
+    title: item.title || "",
+    url: item.url || "",
+    fields,
+    rawSummary: item.summary || ""
+  };
+
+  const title = escapeHtml(item.title || t("summary-item", { index: num }));
+  const url = escapeHtml(item.url || "");
+  const fieldDefs = [
+    ["Platform",       fields.platform],
+    ["Submitted Date", fields.created],
+    ["Problem",        fields.problem],
+    ["Status / Reason",fields.statusReason],
+    ["Root Cause",     fields.rootCause],
+    ["Solution",       fields.solution],
+    ["Similarity(%)",  fields.similarity ? fields.similarity + "%" : ""]
+  ];
+  const fieldRows = fieldDefs
+    .filter(([, v]) => v)
+    .map(([k, v]) =>
+      `<div style="font-size:11px; margin-bottom:2px;">` +
+      `<span style="font-weight:600; color:#374151;">${escapeHtml(k)}:</span> ` +
+      `${escapeHtml(String(v))}</div>`
+    ).join("");
+
+  const el = document.getElementById(`compare-item-${offset + itemIndex}`);
+  if (el) {
+    el.innerHTML =
+      `<div style="font-weight:600; font-size:11px; color:#0f766e; margin-bottom:2px;">#${num}</div>` +
+      `<div style="font-weight:700; margin-bottom:4px;">${title}</div>` +
+      `<div style="font-size:11px; color:#64748b; margin-bottom:6px; word-break:break-all;">${url}</div>` +
+      fieldRows;
+  }
+
+  state.summarizeProgress.done = Math.min(
+    (state.summarizeProgress.done || 0) + 1,
+    state.summarizeProgress.total
+  );
+  setStatus(t("status-summarizing-progress", {
+    done: state.summarizeProgress.done,
+    total: state.summarizeProgress.total
+  }));
 }
 
 async function summarizeTopFiveResults() {
@@ -910,6 +1022,15 @@ async function summarizeTopFiveResults() {
   UI.summarizeTop5Btn.disabled = true;
   setStatus(t("status-summarizing", { start, end }));
 
+  // Pre-allocate slots and render skeleton cards immediately
+  if (offset === 0) {
+    state.comparedItems = new Array(COMPARE_BATCH_SIZE).fill(null);
+  } else {
+    for (let i = 0; i < COMPARE_BATCH_SIZE; i++) state.comparedItems.push(null);
+  }
+  state.summarizeProgress = { done: 0, total: COMPARE_BATCH_SIZE, offset };
+  renderSkeletonCards(COMPARE_BATCH_SIZE, offset);
+
   const response = await sendRuntimeMessage({
     type: MESSAGE_TYPES.SUMMARIZE_TOP5_RESULTS,
     language: state.currentLanguage,
@@ -919,6 +1040,12 @@ async function summarizeTopFiveResults() {
   UI.summarizeTop5Btn.disabled = false;
 
   if (!response.ok) {
+    for (let i = 0; i < COMPARE_BATCH_SIZE; i++) {
+      const el = document.getElementById(`compare-item-${offset + i}`);
+      if (el) el.remove();
+    }
+    state.comparedItems = state.comparedItems.slice(0, offset).filter(Boolean);
+    if (!state.comparedItems.length) UI.summaryCard.style.display = "none";
     setStatus(t("status-summary-failed", { error: response.error }), true);
     return;
   }
@@ -926,7 +1053,12 @@ async function summarizeTopFiveResults() {
   const items = response.items || [];
 
   if (!items.length) {
-    // 沒有更多結果
+    for (let i = 0; i < COMPARE_BATCH_SIZE; i++) {
+      const el = document.getElementById(`compare-item-${offset + i}`);
+      if (el) el.remove();
+    }
+    state.comparedItems = state.comparedItems.slice(0, offset).filter(Boolean);
+    if (!state.comparedItems.length) UI.summaryCard.style.display = "none";
     UI.summarizeTop5Btn.disabled = true;
     UI.summarizeTop5Btn.style.opacity = "0.5";
     setStatus(t("status-summary-all-done"));
@@ -934,13 +1066,25 @@ async function summarizeTopFiveResults() {
     return;
   }
 
-  renderCompareSummaries(items, offset);
+  // Fallback: fill any slots not yet updated by progress messages
+  items.forEach((item, i) => {
+    if (!state.comparedItems[offset + i]) {
+      insertCompareItem(item, i, offset);
+    }
+  });
+
+  // Remove extra skeleton slots (if actual batch < COMPARE_BATCH_SIZE)
+  for (let i = items.length; i < COMPARE_BATCH_SIZE; i++) {
+    const el = document.getElementById(`compare-item-${offset + i}`);
+    if (el) el.remove();
+  }
+  state.comparedItems = state.comparedItems.slice(0, offset + items.length).filter(Boolean);
+
   incrementModelUsage(state.modelConfig.selectedModel, items.length);
   state.compareBatchIndex += 1;
-
-  // 按鈕文字改為下一批比較，一直可以繼續按
   UI.summarizeTop5Btn.textContent = t("summarize-next5");
   setStatus(t("status-summary-done"));
+  UI.generateReportBtn.style.display = "inline-block";
   await savePanelState();
 }
 
@@ -1084,6 +1228,14 @@ function bindEvents() {
     });
   });
 }
+
+chrome.runtime.onMessage.addListener((message, _sender) => {
+  if (message?.type === MESSAGE_TYPES.SUMMARIZE_ITEM_PROGRESS &&
+      message.phase === "item" &&
+      message.offset === state.summarizeProgress.offset) {
+    insertCompareItem(message.item, message.itemIndex, message.offset);
+  }
+});
 
 async function init() {
   await loadLanguage();

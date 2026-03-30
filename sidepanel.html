@@ -127,6 +127,10 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
     }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
     .card {
       background: #fff;
       border: 1px solid #e5e7eb;
@@ -395,11 +399,11 @@
               </label>
               <label style="display:flex; align-items:center; gap:4px;">
                 <span data-i18n="filter-platform">Platform 含</span>
-                <input id="filterPlatform" type="text" placeholder="不限" style="width:72px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
+                <input id="filterPlatform" type="text" data-i18n-placeholder="filter-no-limit" placeholder="不限" style="width:72px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
               </label>
               <label style="display:flex; align-items:center; gap:4px;">
                 <span data-i18n="filter-year">年份 ≥</span>
-                <input id="filterYear" type="number" min="2000" max="2099" placeholder="不限" style="width:58px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
+                <input id="filterYear" type="number" min="2000" max="2099" data-i18n-placeholder="filter-no-limit" placeholder="不限" style="width:58px; padding:2px 4px; font-size:11px; border:1px solid #d1d5db; border-radius:4px;">
               </label>
             </div>
             <div style="display:flex; gap:6px; margin-top:6px;">
