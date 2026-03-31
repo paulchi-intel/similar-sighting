@@ -9,14 +9,27 @@ const DEFAULTS = {
   keywordCount: 3,
   defaultKeywords: [],
   selectedApiKey: "",
-  selectedModel: ""
+  selectedModel: "gpt-4o"
 };
 
 const COMPARE_BATCH_SIZE = 5;
 
 const OPENAI_BASE_URL = "https://expertgpt.intel.com/v1";
 const ANTHROPIC_BASE_URL = "https://expertgpt.intel.com/anthropic/v1";
+const GNAI_OPENAI_BASE_URL = "https://gnai.intel.com/api/providers/openai/v1";
+const GNAI_ANTHROPIC_BASE_URL = "https://gnai.intel.com/api/providers/anthropic";
 const REQUEST_TIMEOUT_MS = 20000;
+
+const GNAI_OPENAI_MODELS = ["gpt-4o", "gpt-4.1", "gpt-5-mini", "gpt-5-nano", "o3-mini"];
+const GNAI_ANTHROPIC_MODELS = ["claude-4-6-opus", "claude-4-6-sonnet", "claude-4-5-opus", "claude-4-5-sonnet", "claude-4-5-haiku"];
+
+function isGnaiKey(apiKey) {
+  return typeof apiKey === "string" && apiKey.length > 0 && !apiKey.startsWith("pak_");
+}
+
+function isAnthropicModel(model) {
+  return typeof model === "string" && model.toLowerCase().startsWith("claude");
+}
 
 const MESSAGE_TYPES = {
   GET_ACTIVE_HSD_PAGE: "GET_ACTIVE_HSD_PAGE",
@@ -65,7 +78,9 @@ function normalizeKeyword(token) {
 }
 
 function isValidApiKey(apiKey) {
-  return typeof apiKey === "string" && apiKey.startsWith("pak_") && apiKey.length > 8;
+  if (typeof apiKey !== "string" || !apiKey.trim()) return false;
+  if (apiKey.startsWith("pak_")) return apiKey.length > 8;
+  return apiKey.length > 0;
 }
 
 function normalizeKeywordCount(value) {
@@ -286,7 +301,7 @@ function fillKeywordsToCount(rawText, keywords, keywordCount) {
 
 function assertApiKey(apiKey) {
   if (!isValidApiKey(apiKey)) {
-    throw new Error("Invalid API key. Must start with pak_");
+    throw new Error("Invalid API key. Use pak_ key (ExpertGPT) or a GNAI key");
   }
 }
 
@@ -323,6 +338,7 @@ async function fetchJson(baseUrl, path, apiKey, options = {}) {
 }
 
 async function fetchModels(apiKey) {
+  if (isGnaiKey(apiKey)) return GNAI_OPENAI_MODELS;
   assertApiKey(apiKey);
   const data = await fetchJson(OPENAI_BASE_URL, "/models", apiKey);
   return (data.data || [])
@@ -331,11 +347,47 @@ async function fetchModels(apiKey) {
 }
 
 async function fetchAnthropicModels(apiKey) {
+  if (isGnaiKey(apiKey)) return GNAI_ANTHROPIC_MODELS;
   assertApiKey(apiKey);
   const data = await fetchJson(ANTHROPIC_BASE_URL, "/models", apiKey);
   return (data.data || [])
     .map((m) => String(m?.id || "").trim())
     .filter(Boolean);
+}
+
+async function callChatCompletionApi(apiKey, model, messages, { maxTokens = 700, temperature = 0.2 } = {}) {
+  // Anthropic model: route to appropriate Anthropic endpoint
+  if (isAnthropicModel(model)) {
+    const anthropicBase = isGnaiKey(apiKey) ? GNAI_ANTHROPIC_BASE_URL : ANTHROPIC_BASE_URL;
+    const systemMsg = messages.find((m) => m.role === "system");
+    const userMsgs = messages.filter((m) => m.role !== "system");
+    const body = {
+      model,
+      system: systemMsg ? systemMsg.content : "",
+      messages: userMsgs,
+      max_tokens: maxTokens
+    };
+    const data = await fetchJson(anthropicBase, "/v1/messages", apiKey, {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+    return data?.content?.[0]?.text || "";
+  }
+
+  // OpenAI-compat model
+  const baseUrl = isGnaiKey(apiKey) ? GNAI_OPENAI_BASE_URL : OPENAI_BASE_URL;
+  const body = {
+    model,
+    messages,
+    stream: false,
+    temperature,
+    max_tokens: maxTokens
+  };
+  const data = await fetchJson(baseUrl, "/chat/completions", apiKey, {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  return data?.choices?.[0]?.message?.content || "";
 }
 
 async function fetchQuota(apiKey) {
@@ -392,12 +444,7 @@ async function extractKeywordsByModel(rawText, keywordCount, apiKey, model) {
     max_tokens: 220
   };
 
-  const data = await fetchJson(OPENAI_BASE_URL, "/chat/completions", apiKey, {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-
-  const content = data?.choices?.[0]?.message?.content || "";
+  const content = await callChatCompletionApi(apiKey, body.model, body.messages, { maxTokens: 220, temperature: 0.2 });
   const parsed = fillKeywordsToCount(rawText, parseKeywordsFromModelText(content, safeKeywordCount), safeKeywordCount);
   if (!parsed.length) {
     throw new Error("Model returned unparseable keywords");
@@ -421,12 +468,7 @@ async function extractKeywordsByModel(rawText, keywordCount, apiKey, model) {
       max_tokens: 220
     };
 
-    const repairData = await fetchJson(OPENAI_BASE_URL, "/chat/completions", apiKey, {
-      method: "POST",
-      body: JSON.stringify(repairBody)
-    });
-
-    const repairContent = repairData?.choices?.[0]?.message?.content || "";
+    const repairContent = await callChatCompletionApi(apiKey, repairBody.model, repairBody.messages, { maxTokens: 220, temperature: 0.2 });
     const repaired = fillKeywordsToCount(rawText, parseKeywordsFromModelText(repairContent, safeKeywordCount), safeKeywordCount);
     if (repaired.length >= safeKeywordCount) {
       return injectBsodCodesIntoKeywords(repaired.slice(0, safeKeywordCount), extractBsodCodes(rawText));
@@ -456,12 +498,8 @@ async function summarizeContentByModel({ title, url, text, apiKey, model, langua
     max_tokens: 700
   };
 
-  const data = await fetchJson(OPENAI_BASE_URL, "/chat/completions", apiKey, {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-
-  return data?.choices?.[0]?.message?.content || "(No summary content)";
+  const result = await callChatCompletionApi(apiKey, body.model, body.messages, { maxTokens: 700, temperature: 0.2 });
+  return result || "(No summary content)";
 }
 
 async function summarizeComparedToOriginal({
@@ -543,12 +581,8 @@ async function summarizeComparedToOriginal({
     max_tokens: 1000
   };
 
-  const data = await fetchJson(OPENAI_BASE_URL, "/chat/completions", apiKey, {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-
-  return data?.choices?.[0]?.message?.content || "(No comparison summary content)";
+  const result = await callChatCompletionApi(apiKey, body.model, body.messages, { maxTokens: 1000, temperature: 0.2 });
+  return result || "(No comparison summary content)";
 }
 
 async function getSettings() {
@@ -609,7 +643,7 @@ async function saveModelConfig({ selectedApiKey, selectedModel }) {
     : "";
 
   if (safeApiKey && !isValidApiKey(safeApiKey)) {
-    throw new Error("API key must start with pak_");
+    throw new Error("Invalid API key format");
   }
 
   if (!safeModel) {
@@ -1171,8 +1205,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const merged = [...new Set([...openaiModels, ...anthropicModels])];
         let modelCostCap = {};
         try {
-          const quota = await fetchQuota(apiKey);
-          modelCostCap = mapModelCostCapFromQuota(quota);
+          if (!isGnaiKey(apiKey)) {
+            const quota = await fetchQuota(apiKey);
+            modelCostCap = mapModelCostCapFromQuota(quota);
+          }
         } catch (_err) {
           modelCostCap = {};
         }

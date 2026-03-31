@@ -14,7 +14,8 @@
   "host_permissions": [
     "https://hsdes.intel.com/*",
     "https://*.hsdes.intel.com/*",
-    "https://expertgpt.intel.com/*"
+    "https://expertgpt.intel.com/*",
+    "https://gnai.intel.com/*"
   ],
   "action": {
     "default_title": "Similar Sighting"

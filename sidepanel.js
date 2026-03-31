@@ -50,8 +50,8 @@ const TRANSLATIONS = {
     "status-load-page-failed": "載入失敗: {error}",
     "status-load-clipboard-failed": "載入剪貼簿失敗: {error}",
     "status-search-failed": "搜尋失敗: {error}",
-    "error-api-format": "API key 格式無效，需以 pak_ 開頭",
-    "error-api-prefix": "API key 必須以 pak_ 開頭",
+    "error-api-format": "API key 格式無效，請輸入 pak_ 開頭（ExpertGPT）或 GNAI Key",
+    "error-api-prefix": "API key 格式無效",
     "error-no-keyword": "請至少輸入 1 個 keyword",
     "error-clipboard-empty": "剪貼簿是空的",
     "hsd-page": "HSD Page",
@@ -95,7 +95,7 @@ const TRANSLATIONS = {
     "report-stats": "過濾後保留 {kept} / 共 {total} 筆",
     "report-empty": "無符合條件的結果",
     "modal-api-key-title": "設定 API Key",
-    "modal-api-key-hint": "請輸入 API Key（以 pak_ 開頭）",
+    "modal-api-key-hint": "請輸入 API Key（ExpertGPT 以 pak_ 開頭，或直接輸入 GNAI Key）",
     "modal-cancel": "取消",
     "modal-confirm": "確認"
   },
@@ -122,8 +122,8 @@ const TRANSLATIONS = {
     "status-load-page-failed": "载入失败: {error}",
     "status-load-clipboard-failed": "载入剪贴板失败: {error}",
     "status-search-failed": "搜索失败: {error}",
-    "error-api-format": "API key 格式无效，需以 pak_ 开头",
-    "error-api-prefix": "API key 必须以 pak_ 开头",
+    "error-api-format": "API key 格式无效，请输入 pak_ 开头（ExpertGPT）或 GNAI Key",
+    "error-api-prefix": "API key 格式无效",
     "error-no-keyword": "请至少输入 1 个 keyword",
     "error-clipboard-empty": "剪贴板是空的",
     "hsd-page": "HSD Page",
@@ -168,7 +168,7 @@ const TRANSLATIONS = {
     "report-stats": "过滤后保留 {kept} / 共 {total} 笔",
     "report-empty": "无符合条件的结果",
     "modal-api-key-title": "设置 API Key",
-    "modal-api-key-hint": "请输入 API Key（以 pak_ 开头）",
+    "modal-api-key-hint": "请输入 API Key（ExpertGPT 以 pak_ 开头，或直接输入 GNAI Key）",
     "modal-cancel": "取消",
     "modal-confirm": "确认"
   },
@@ -195,8 +195,8 @@ const TRANSLATIONS = {
     "status-load-page-failed": "Load failed: {error}",
     "status-load-clipboard-failed": "Failed to load clipboard: {error}",
     "status-search-failed": "Search failed: {error}",
-    "error-api-format": "API key format is invalid. It must start with pak_",
-    "error-api-prefix": "API key must start with pak_",
+    "error-api-format": "Invalid API key. Enter pak_ key (ExpertGPT) or a GNAI key",
+    "error-api-prefix": "Invalid API key format",
     "error-no-keyword": "Please enter at least one keyword",
     "error-clipboard-empty": "Clipboard is empty",
     "hsd-page": "HSD Page",
@@ -241,7 +241,7 @@ const TRANSLATIONS = {
     "report-stats": "Showing {kept} / {total} sightings",
     "report-empty": "No matching results",
     "modal-api-key-title": "Set API Key",
-    "modal-api-key-hint": "Enter your API Key (starts with pak_)",
+    "modal-api-key-hint": "Enter pak_ key (ExpertGPT) or a GNAI key",
     "modal-cancel": "Cancel",
     "modal-confirm": "Confirm"
   }
@@ -475,11 +475,16 @@ function renderModelOptions() {
   const modelList = state.models.length ? state.models : [state.modelConfig.selectedModel || DEFAULTS.selectedModel];
   const unique = [...new Set(modelList.filter(Boolean))];
 
+  const useGnai = isGnaiKey(state.modelConfig.selectedApiKey || "");
   unique.forEach((model) => {
-    const quota = state.modelQuotas[model] || { used: 0, limit: 0 };
     const option = document.createElement("option");
     option.value = model;
-    option.textContent = `${model} (${quota.used}/${quota.limit})`;
+    if (useGnai) {
+      option.textContent = model;
+    } else {
+      const quota = state.modelQuotas[model] || { used: 0, limit: 0 };
+      option.textContent = `${model} (${quota.used}/${quota.limit})`;
+    }
     UI.modelSelect.appendChild(option);
   });
 
@@ -520,7 +525,13 @@ function closeModelModal() {
 }
 
 function isValidApiKey(apiKey) {
-  return typeof apiKey === "string" && apiKey.startsWith("pak_") && apiKey.length > 8;
+  if (typeof apiKey !== "string" || !apiKey.trim()) return false;
+  if (apiKey.startsWith("pak_")) return apiKey.length > 8;
+  return apiKey.length > 0;
+}
+
+function isGnaiKey(apiKey) {
+  return typeof apiKey === "string" && apiKey.length > 0 && !apiKey.startsWith("pak_");
 }
 
 async function loadModelConfig() {
