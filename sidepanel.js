@@ -539,8 +539,9 @@ async function refreshModels() {
 
   state.models = Array.isArray(response.models) ? response.models : [];
   syncModelQuotasFromQuota(response.modelCostCap || {});
-  if (state.models.length && !state.models.includes(UI.modelSelect.value)) {
-    // Prioritize default model if available in the list
+  // Only reset to default if the currently saved model is not in the list at all
+  const currentModel = state.modelConfig.selectedModel;
+  if (state.models.length && currentModel && !state.models.includes(currentModel)) {
     const defaultModel = DEFAULTS.selectedModel;
     state.modelConfig.selectedModel = state.models.includes(defaultModel) ? defaultModel : state.models[0];
   }
@@ -1166,6 +1167,18 @@ function buildReportText(filtered) {
 function bindEvents() {
   UI.titleBtn.addEventListener("click", openModelModal);
   UI.clearBtn.addEventListener("click", clearPanel);
+  UI.modelSelect.addEventListener("change", async () => {
+    const selected = UI.modelSelect.value;
+    if (!selected) return;
+    state.modelConfig.selectedModel = selected;
+    const response = await sendRuntimeMessage({
+      type: MESSAGE_TYPES.SAVE_MODEL_CONFIG,
+      config: { selectedApiKey: state.modelConfig.selectedApiKey, selectedModel: selected }
+    });
+    if (response.ok) {
+      state.modelConfig = response.config || state.modelConfig;
+    }
+  });
   UI.languageSelect.addEventListener("change", async () => {
     const readyTexts = [
       TRANSLATIONS["zh-TW"]["status-ready"],
