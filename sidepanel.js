@@ -5,6 +5,7 @@ const MESSAGE_TYPES = {
   SEARCH_SIMILAR_SIGHTING: "SEARCH_SIMILAR_SIGHTING",
   SUMMARIZE_TOP5_RESULTS: "SUMMARIZE_TOP5_RESULTS",
   SUMMARIZE_ITEM_PROGRESS: "SUMMARIZE_ITEM_PROGRESS",
+  CLOSE_FILTERED_TABS: "CLOSE_FILTERED_TABS",
   GET_MODELS: "GET_MODELS",
   GET_MODEL_CONFIG: "GET_MODEL_CONFIG",
   SAVE_MODEL_CONFIG: "SAVE_MODEL_CONFIG"
@@ -86,6 +87,8 @@ const TRANSLATIONS = {
     "reset-filter": "重設",
     "copy-report": "複製報告",
     "copy-report-done": "✓ 已複製",
+    "close-filtered-tabs": "🗑 關閉被濾掉的 Tab",
+    "close-filtered-tabs-done": "已關閉 {count} 個 Tab",
     "report-stats": "過濾後保留 {kept} / 共 {total} 筆",
     "report-empty": "無符合條件的結果",
     "modal-api-key-title": "設定 API Key",
@@ -155,6 +158,8 @@ const TRANSLATIONS = {
     "reset-filter": "重设",
     "copy-report": "复制报告",
     "copy-report-done": "✓ 已复制",
+    "close-filtered-tabs": "🗑 关闭被过滤的 Tab",
+    "close-filtered-tabs-done": "已关闭 {count} 个 Tab",
     "report-stats": "过滤后保留 {kept} / 共 {total} 笔",
     "report-empty": "无符合条件的结果",
     "modal-api-key-title": "设置 API Key",
@@ -224,6 +229,8 @@ const TRANSLATIONS = {
     "reset-filter": "Reset",
     "copy-report": "Copy Report",
     "copy-report-done": "✓ Copied",
+    "close-filtered-tabs": "🗑 Close Filtered-out Tabs",
+    "close-filtered-tabs-done": "Closed {count} tab(s)",
     "report-stats": "Showing {kept} / {total} sightings",
     "report-empty": "No matching results",
     "modal-api-key-title": "Set API Key",
@@ -262,6 +269,7 @@ const UI = {
   reportStats: document.getElementById("reportStats"),
   reportList: document.getElementById("reportList"),
   copyReportBtn: document.getElementById("copyReportBtn"),
+  closeFilteredTabsBtn: document.getElementById("closeFilteredTabsBtn"),
   modelModal: document.getElementById("modelModal"),
   apiKeyInput: document.getElementById("apiKeyInput"),
   modelSelect: document.getElementById("modelSelect"),
@@ -1136,6 +1144,7 @@ function buildItemBlock(item) {
 function renderReport() {
   const filters = getReportFilterValues();
   const filtered = filterComparedItems(filters);
+  const excluded = state.comparedItems.filter((item) => !filtered.includes(item));
 
   UI.reportStats.textContent = t("report-stats", { kept: filtered.length, total: state.comparedItems.length });
 
@@ -1147,6 +1156,13 @@ function renderReport() {
 
   UI.summaryList.style.display = "none";
   UI.reportArea.style.display = "block";
+
+  // Show/hide close-tabs button based on whether there are excluded items with URLs
+  const hasExcludedUrls = excluded.some((item) => item.url && !item.url.startsWith("clipboard"));
+  UI.closeFilteredTabsBtn.style.display = hasExcludedUrls ? "block" : "none";
+  UI.closeFilteredTabsBtn.textContent = t("close-filtered-tabs");
+  UI.closeFilteredTabsBtn._excludedUrls = excluded.map((item) => item.url).filter(Boolean);
+  UI.closeFilteredTabsBtn._keepUrls = filtered.map((item) => item.url).filter(Boolean);
 }
 
 function buildReportText(filtered) {
@@ -1241,6 +1257,24 @@ function bindEvents() {
       UI.copyReportBtn.textContent = t("copy-report-done");
       setTimeout(() => { UI.copyReportBtn.textContent = orig; }, 2000);
     });
+  });
+
+  UI.closeFilteredTabsBtn.addEventListener("click", async () => {
+    const closeUrls = UI.closeFilteredTabsBtn._excludedUrls || [];
+    const keepUrls = UI.closeFilteredTabsBtn._keepUrls || [];
+    if (!closeUrls.length) return;
+    UI.closeFilteredTabsBtn.disabled = true;
+    const response = await sendRuntimeMessage({
+      type: MESSAGE_TYPES.CLOSE_FILTERED_TABS,
+      closeUrls,
+      keepUrls
+    });
+    UI.closeFilteredTabsBtn.disabled = false;
+    if (response.ok) {
+      const orig = UI.closeFilteredTabsBtn.textContent;
+      UI.closeFilteredTabsBtn.textContent = t("close-filtered-tabs-done", { count: response.closed });
+      setTimeout(() => { UI.closeFilteredTabsBtn.textContent = orig; }, 3000);
+    }
   });
 }
 

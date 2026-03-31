@@ -26,6 +26,7 @@ const MESSAGE_TYPES = {
   SEARCH_SIMILAR_SIGHTING: "SEARCH_SIMILAR_SIGHTING",
   SUMMARIZE_TOP5_RESULTS: "SUMMARIZE_TOP5_RESULTS",
   SUMMARIZE_ITEM_PROGRESS: "SUMMARIZE_ITEM_PROGRESS",
+  CLOSE_FILTERED_TABS: "CLOSE_FILTERED_TABS",
   GET_MODELS: "GET_MODELS",
   GET_MODEL_CONFIG: "GET_MODEL_CONFIG",
   SAVE_MODEL_CONFIG: "SAVE_MODEL_CONFIG"
@@ -1089,7 +1090,7 @@ async function summarizeTop5Results(language, offset = 0) {
       } catch (err) {
         result = {
           title: "(Summary failed)",
-          url: "",
+          url: item.href,
           summary: err?.message || String(err),
           submittedDate: ""
         };
@@ -1184,6 +1185,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === MESSAGE_TYPES.SUMMARIZE_TOP5_RESULTS) {
         const items = await summarizeTop5Results(message.language || "zh-TW", message.offset || 0);
         sendResponse({ ok: true, items });
+        return;
+      }
+
+      if (message?.type === MESSAGE_TYPES.CLOSE_FILTERED_TABS) {
+        const keepUrls = new Set(Array.isArray(message.keepUrls) ? message.keepUrls : []);
+        const closeUrls = new Set(Array.isArray(message.closeUrls) ? message.closeUrls : []);
+        const allTabs = await chrome.tabs.query({});
+        const toClose = allTabs
+          .filter((tab) => {
+            const tabUrl = tab.url || "";
+            // Never close the current side panel's tab or any tab not matching a sighting URL
+            const matchesClose = [...closeUrls].some((u) => u && tabUrl.includes(u));
+            const matchesKeep = [...keepUrls].some((u) => u && tabUrl.includes(u));
+            return matchesClose && !matchesKeep;
+          })
+          .map((tab) => tab.id);
+        if (toClose.length) {
+          await chrome.tabs.remove(toClose);
+        }
+        sendResponse({ ok: true, closed: toClose.length });
         return;
       }
 
