@@ -66,7 +66,7 @@ const TRANSLATIONS = {
     "search-similar": "搜尋 Similar Sighting",
     "summarize-top5": "比較5筆資料",
     "summarize-next5": "比較下5筆資料",
-    "summary-title": "Sighting 比较結果",
+    "summary-title": "Sighting 比較結果",
     "status-summarizing": "正在開啟第{start}到{end}筆結果並產生比较...",
     "status-summarizing-progress": "正在比較中... ({done}/{total} 完成)",
     "skeleton-comparing": "比較中...",
@@ -863,8 +863,9 @@ function renderCompareSummaries(items, offset) {
     const fields = parseSummaryFields(item.summary || "");
 
     if (item.submittedDate) {
-      fields.created = item.submittedDate;
-      const yearMatch = item.submittedDate.match(/\d{4}/);
+      const dateOnly = (item.submittedDate.match(/\d{4}[-\/]\d{2}[-\/]\d{2}/) || [item.submittedDate])[0];
+      fields.created = dateOnly;
+      const yearMatch = dateOnly.match(/\d{4}/);
       if (yearMatch) fields.year = parseInt(yearMatch[0]);
     }
 
@@ -956,8 +957,9 @@ function insertCompareItem(item, itemIndex, offset) {
   const num = offset + itemIndex + 1;
   const fields = parseSummaryFields(item.summary || "");
   if (item.submittedDate) {
-    fields.created = item.submittedDate;
-    const ym = item.submittedDate.match(/\d{4}/);
+    const dateOnly = (item.submittedDate.match(/\d{4}[-\/]\d{2}[-\/]\d{2}/) || [item.submittedDate])[0];
+    fields.created = dateOnly;
+    const ym = dateOnly.match(/\d{4}/);
     if (ym) fields.year = parseInt(ym[0]);
   }
 
