@@ -27,6 +27,7 @@ const MESSAGE_TYPES = {
   SUMMARIZE_TOP5_RESULTS: "SUMMARIZE_TOP5_RESULTS",
   SUMMARIZE_ITEM_PROGRESS: "SUMMARIZE_ITEM_PROGRESS",
   CLOSE_FILTERED_TABS: "CLOSE_FILTERED_TABS",
+  RETRY_SINGLE_ITEM: "RETRY_SINGLE_ITEM",
   GET_MODELS: "GET_MODELS",
   GET_MODEL_CONFIG: "GET_MODEL_CONFIG",
   SAVE_MODEL_CONFIG: "SAVE_MODEL_CONFIG"
@@ -914,35 +915,39 @@ async function waitForPageContentReady(tabId, timeoutMs = 12000) {
   let stableRounds = 0;
 
   while (Date.now() - start < timeoutMs) {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const bodyText = document.body?.innerText || "";
-        const textLength = bodyText.trim().length;
-        const hasLoadingWord = /loading|載入中|加载中/i.test(bodyText);
-        const hasBusyIndicator = !!document.querySelector(
-          ".loading, .spinner, mat-progress-bar, mat-spinner, [aria-busy='true']"
-        );
-        return {
-          readyState: document.readyState,
-          textLength,
-          hasLoadingWord,
-          hasBusyIndicator
-        };
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          const bodyText = document.body?.innerText || "";
+          const textLength = bodyText.trim().length;
+          const hasLoadingWord = /loading|載入中|加载中/i.test(bodyText);
+          const hasBusyIndicator = !!document.querySelector(
+            ".loading, .spinner, mat-progress-bar, mat-spinner, [aria-busy='true']"
+          );
+          return {
+            readyState: document.readyState,
+            textLength,
+            hasLoadingWord,
+            hasBusyIndicator
+          };
+        }
+      });
+
+      const pageStable = result?.textLength > 300 && result?.textLength === lastLength;
+      if (pageStable) {
+        stableRounds += 1;
+      } else {
+        stableRounds = 0;
       }
-    });
+      lastLength = result?.textLength || 0;
 
-    const pageStable = result?.textLength > 300 && result?.textLength === lastLength;
-    if (pageStable) {
-      stableRounds += 1;
-    } else {
-      stableRounds = 0;
-    }
-    lastLength = result?.textLength || 0;
-
-    const noBusy = !result?.hasLoadingWord && !result?.hasBusyIndicator;
-    if (result?.readyState === "complete" && noBusy && stableRounds >= 2) {
-      return;
+      const noBusy = !result?.hasLoadingWord && !result?.hasBusyIndicator;
+      if (result?.readyState === "complete" && noBusy && stableRounds >= 2) {
+        return;
+      }
+    } catch (_err) {
+      // executeScript may fail transiently under high concurrency — skip and retry
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -1205,6 +1210,41 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           await chrome.tabs.remove(toClose);
         }
         sendResponse({ ok: true, closed: toClose.length });
+        return;
+      }
+
+      if (message?.type === MESSAGE_TYPES.RETRY_SINGLE_ITEM) {
+        const modelConfig = await getModelConfig();
+        if (!isValidApiKey(modelConfig.selectedApiKey)) {
+          sendResponse({ ok: false, error: "Please set your API key" });
+          return;
+        }
+        const activeTab = await getActiveTab();
+        const [{ result: originalContent }] = await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: () => ({
+            title: document.title || "",
+            url: window.location.href || "",
+            text: (document.body?.innerText || "").slice(0, 20000)
+          })
+        });
+        const content = await openTabAndCaptureContent(message.url);
+        const summary = await summarizeComparedToOriginal({
+          original: originalContent,
+          target: content,
+          apiKey: modelConfig.selectedApiKey,
+          model: modelConfig.selectedModel,
+          language: message.language || "zh-TW"
+        });
+        sendResponse({
+          ok: true,
+          item: {
+            title: content.title || message.url,
+            url: content.url || message.url,
+            summary,
+            submittedDate: content.submittedDate || ""
+          }
+        });
         return;
       }
 

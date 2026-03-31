@@ -6,6 +6,7 @@ const MESSAGE_TYPES = {
   SUMMARIZE_TOP5_RESULTS: "SUMMARIZE_TOP5_RESULTS",
   SUMMARIZE_ITEM_PROGRESS: "SUMMARIZE_ITEM_PROGRESS",
   CLOSE_FILTERED_TABS: "CLOSE_FILTERED_TABS",
+  RETRY_SINGLE_ITEM: "RETRY_SINGLE_ITEM",
   GET_MODELS: "GET_MODELS",
   GET_MODEL_CONFIG: "GET_MODEL_CONFIG",
   SAVE_MODEL_CONFIG: "SAVE_MODEL_CONFIG"
@@ -89,6 +90,8 @@ const TRANSLATIONS = {
     "copy-report-done": "✓ 已複製",
     "close-filtered-tabs": "🗑 關閉被濾掉的 Tab",
     "close-filtered-tabs-done": "已關閉 {count} 個 Tab",
+    "retry": "🔄 重試",
+    "retrying": "重試中...",
     "report-stats": "過濾後保留 {kept} / 共 {total} 筆",
     "report-empty": "無符合條件的結果",
     "modal-api-key-title": "設定 API Key",
@@ -160,6 +163,8 @@ const TRANSLATIONS = {
     "copy-report-done": "✓ 已复制",
     "close-filtered-tabs": "🗑 关闭被过滤的 Tab",
     "close-filtered-tabs-done": "已关闭 {count} 个 Tab",
+    "retry": "🔄 重试",
+    "retrying": "重试中...",
     "report-stats": "过滤后保留 {kept} / 共 {total} 笔",
     "report-empty": "无符合条件的结果",
     "modal-api-key-title": "设置 API Key",
@@ -231,6 +236,8 @@ const TRANSLATIONS = {
     "copy-report-done": "✓ Copied",
     "close-filtered-tabs": "🗑 Close Filtered-out Tabs",
     "close-filtered-tabs-done": "Closed {count} tab(s)",
+    "retry": "🔄 Retry",
+    "retrying": "Retrying...",
     "report-stats": "Showing {kept} / {total} sightings",
     "report-empty": "No matching results",
     "modal-api-key-title": "Set API Key",
@@ -981,6 +988,7 @@ function insertCompareItem(item, itemIndex, offset) {
     rawSummary: item.summary || ""
   };
 
+  const isFailed = item.title === "(Summary failed)";
   const title = escapeHtml(item.title || t("summary-item", { index: num }));
   const url = escapeHtml(item.url || "");
   const fieldDefs = [
@@ -1004,9 +1012,12 @@ function insertCompareItem(item, itemIndex, offset) {
   if (el) {
     el.innerHTML =
       `<div style="font-weight:600; font-size:11px; color:#0f766e; margin-bottom:2px;">#${num}</div>` +
-      `<div style="font-weight:700; margin-bottom:4px;">${title}</div>` +
+      `<div style="font-weight:700; margin-bottom:4px; color:${isFailed ? "#ef4444" : "inherit"}">${title}</div>` +
       `<div style="font-size:11px; color:#64748b; margin-bottom:6px; word-break:break-all;">${url}</div>` +
-      fieldRows;
+      fieldRows +
+      (isFailed
+        ? `<button data-retry-offset="${offset}" data-retry-index="${itemIndex}" data-retry-url="${escapeHtml(item.url)}" style="margin-top:6px; font-size:11px; padding:3px 10px; background:#fefce8; color:#92400e; border:1px solid #fde68a; border-radius:6px; cursor:pointer;">${t("retry")}</button>`
+        : "");
   }
 
   state.summarizeProgress.done = Math.min(
@@ -1017,6 +1028,36 @@ function insertCompareItem(item, itemIndex, offset) {
     done: state.summarizeProgress.done,
     total: state.summarizeProgress.total
   }));
+}
+
+async function retrySingleItem(retryOffset, retryIndex, retryUrl) {
+  const elId = `compare-item-${retryOffset + retryIndex}`;
+  const el = document.getElementById(elId);
+  const btn = el ? el.querySelector("[data-retry-offset]") : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = t("retrying");
+  }
+
+  const response = await sendRuntimeMessage({
+    type: MESSAGE_TYPES.RETRY_SINGLE_ITEM,
+    url: retryUrl,
+    language: state.currentLanguage
+  });
+
+  if (!response.ok) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t("retry");
+    }
+    setStatus(t("status-summary-failed", { error: response.error }), true);
+    return;
+  }
+
+  insertCompareItem(response.item, retryIndex, retryOffset);
+  incrementModelUsage(state.modelConfig.selectedModel);
+  setStatus(t("status-summary-done"));
+  await savePanelState();
 }
 
 async function summarizeTopFiveResults() {
@@ -1225,6 +1266,16 @@ function bindEvents() {
   });
   UI.searchBtn.addEventListener("click", searchSimilarSighting);
   UI.summarizeTop5Btn.addEventListener("click", summarizeTopFiveResults);
+
+  // Event delegation for dynamically-added retry buttons inside summaryList
+  UI.summaryList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-retry-offset]");
+    if (!btn || btn.disabled) return;
+    const retryOffset = parseInt(btn.getAttribute("data-retry-offset"));
+    const retryIndex = parseInt(btn.getAttribute("data-retry-index"));
+    const retryUrl = btn.getAttribute("data-retry-url");
+    retrySingleItem(retryOffset, retryIndex, retryUrl);
+  });
 
   // 整理報告 — 切換過濾器列顯示
   UI.generateReportBtn.addEventListener("click", () => {
