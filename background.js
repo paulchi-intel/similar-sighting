@@ -359,6 +359,7 @@ async function callChatCompletionApi(apiKey, model, messages, { maxTokens = 700,
   // Anthropic model: route to appropriate Anthropic endpoint
   if (isAnthropicModel(model)) {
     const anthropicBase = isGnaiKey(apiKey) ? GNAI_ANTHROPIC_BASE_URL : ANTHROPIC_BASE_URL;
+    const anthropicPath = isGnaiKey(apiKey) ? "/v1/messages" : "/messages";
     const systemMsg = messages.find((m) => m.role === "system");
     const userMsgs = messages.filter((m) => m.role !== "system");
     const body = {
@@ -367,7 +368,7 @@ async function callChatCompletionApi(apiKey, model, messages, { maxTokens = 700,
       messages: userMsgs,
       max_tokens: maxTokens
     };
-    const data = await fetchJson(anthropicBase, "/v1/messages", apiKey, {
+    const data = await fetchJson(anthropicBase, anthropicPath, apiKey, {
       method: "POST",
       body: JSON.stringify(body)
     });
