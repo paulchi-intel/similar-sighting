@@ -5,7 +5,7 @@ A Chrome extension that intelligently discovers related issues in Intel's Hardwa
 ## Features
 
 🔍 **Intelligent Keyword Extraction**
-- Automatically extract keywords from HSD pages using AI models (Claude, etc.)
+- Automatically extract keywords from HSD pages using AI models
 - Customizable keyword count and refinement
 - Manual keyword editing and management
 
@@ -24,10 +24,11 @@ A Chrome extension that intelligently discovers related issues in Intel's Hardwa
 - Paste content from clipboard
 - Process any text for keyword extraction
 
-🔐 **Secure Configuration**
-- Support for multiple AI models through ExpertGPT platform
-- Configurable API key and model selection
-- Persistent settings storage
+🔐 **Dual API Key Support**
+- Supports both **ExpertGPT** (`pak_...`) and **GNAI** API keys
+- Model list and API endpoints are automatically routed based on key type
+- ExpertGPT: models fetched dynamically from API with per-model quota display
+- GNAI: fixed model list with no quota display; supports both OpenAI and Anthropic models
 
 ## Installation
 
@@ -37,14 +38,24 @@ A Chrome extension that intelligently discovers related issues in Intel's Hardwa
 4. Click "Load unpacked" and select the project directory
 5. The "Similar Sighting" extension will appear in your Chrome toolbar
 
+## Getting API Keys
+
+Two API key types are supported:
+
+| Type | Format | How to get it |
+|------|--------|---------------|
+| **ExpertGPT** | starts with `pak_` | https://expertgpt.intel.com/my_profile |
+| **GNAI** | any other string | https://gnai.intel.com/auth/oauth2/sso/ |
+
 ## Getting Started
 
 ### Initial Setup
 
 1. **Install the extension** (see Installation section above)
 2. **Configure API Key:**
-   - Click the extension icon → Settings (⚙️)
-   - Enter your ExpertGPT API key (format: `pak_*`)
+   - Click **🔑 Similar Sighting** in the side panel header
+   - Enter your ExpertGPT (`pak_...`) or GNAI API key
+   - The model list loads automatically based on your key type
    - Select your preferred AI model
    - Click "Confirm"
 
@@ -86,12 +97,29 @@ A Chrome extension that intelligently discovers related issues in Intel's Hardwa
 
 ### Settings
 
-Access settings via the ⚙️ icon in the side panel:
+Access settings via **🔑 Similar Sighting** in the side panel header:
 
-- **API Key:** Your ExpertGPT platform API key (required)
+- **API Key:** ExpertGPT (`pak_...`) or GNAI key
 - **Model Selection:** Choose from available AI models for keyword extraction
+  - ExpertGPT key: models loaded from API, quota shown as `(used/limit)`
+  - GNAI key: fixed list of OpenAI and Anthropic models, no quota shown
+
+Options page (⚙️ icon in Chrome Extensions):
+
 - **Keyword Count:** Set number of keywords to extract (default: 3)
-- **Language:** Preferred UI language
+
+## How API Key Routing Works
+
+| Key type | Model type | Endpoint used |
+|----------|------------|---------------|
+| ExpertGPT (`pak_...`) | OpenAI models | `https://expertgpt.intel.com/v1/chat/completions` |
+| ExpertGPT (`pak_...`) | Anthropic models | `https://expertgpt.intel.com/anthropic/v1/messages` |
+| GNAI | OpenAI models | `https://gnai.intel.com/api/providers/openai/v1/chat/completions` |
+| GNAI | Anthropic models | `https://gnai.intel.com/api/providers/anthropic/v1/messages` |
+
+GNAI fixed model list:
+- **OpenAI:** `gpt-4o`, `gpt-4.1`, `gpt-5-mini`, `gpt-5-nano`, `o3-mini`
+- **Anthropic:** `claude-4-6-opus`, `claude-4-6-sonnet`, `claude-4-5-opus`, `claude-4-5-sonnet`, `claude-4-5-haiku`
 
 ## File Structure
 
@@ -101,24 +129,15 @@ similar-sighting/
 ├── background.js          # Service worker & messaging logic
 ├── sidepanel.html         # Main UI
 ├── sidepanel.js           # UI logic & interactions
-├── options.html           # Settings page
+├── options.html           # Settings page (keyword count)
 └── README.md              # This file
 ```
-
-## API Requirements
-
-- **Platform:** Intel ExpertGPT (`https://expertgpt.intel.com/v1`)
-- **Authentication:** API key with `pak_` prefix
-- **Timeout:** 20 seconds per request
-- **Rate Limit:** Batch processing up to 5 results per cycle
 
 ## Supported Languages
 
 - 繁體中文 (Traditional Chinese)
 - 简体中文 (Simplified Chinese)
 - English
-
-UI language automatically adjusts based on browser settings, with fallback to Traditional Chinese.
 
 ## Permissions
 
@@ -134,26 +153,35 @@ The extension requires the following Chrome permissions:
 Host permissions for:
 - `https://hsdes.intel.com/*` - Intel HSD system
 - `https://*.hsdes.intel.com/*` - HSD subdomains
-- `https://expertgpt.intel.com/*` - AI model endpoint
+- `https://expertgpt.intel.com/*` - ExpertGPT AI endpoint
+- `https://gnai.intel.com/*` - GNAI AI endpoint
 
 ## Troubleshooting
 
 ### Extension not showing results
 - Verify you're on an HSD page or have valid clipboard content
-- Check that API key is configured correctly
-- Ensure API key format is correct (starts with `pak_`)
+- Check that API key is configured (click 🔑 Similar Sighting)
+- Ensure the selected model is appropriate for your key type
 
-### "Search failed" error
-- Confirm your ExpertGPT API key is valid and active
+### "Search failed" or API error
+- Confirm your API key is valid and active
 - Check network connectivity
-- Verify the selected model is available
+- For ExpertGPT keys: verify the key starts with `pak_` and the selected model is available
+- For GNAI keys: verify the key is correct and `gnai.intel.com` is reachable
 
 ### Keywords not extracted
-- Ensure at least 1 keyword is configured in settings
-- Try with different AI models
-- Check HSD page is fully loaded before extracting
+- Ensure at least 1 keyword is configured in options
+- Try switching to a different AI model
+- Check that the HSD page is fully loaded before extracting
 
 ## Changelog
+
+### v1.1.0
+- Added GNAI API key support alongside existing ExpertGPT keys
+- Automatic endpoint routing based on key type (ExpertGPT vs GNAI)
+- Anthropic models now correctly routed to Anthropic-format endpoint for both key types
+- Model selector hides quota for GNAI keys (quota not applicable)
+- Added `https://gnai.intel.com/*` to host permissions
 
 ### v1.0.0
 - Initial release
@@ -173,4 +201,4 @@ For issues, questions, or feature requests, please contact your IT department or
 
 ---
 
-**Note:** This extension is designed for Intel employees and requires valid ExpertGPT credentials to function.
+**Note:** This extension is designed for Intel employees and requires valid ExpertGPT or GNAI credentials to function.
