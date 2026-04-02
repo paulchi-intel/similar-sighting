@@ -377,12 +377,14 @@ async function callChatCompletionApi(apiKey, model, messages, { maxTokens = 700,
 
   // OpenAI-compat model
   const baseUrl = isGnaiKey(apiKey) ? GNAI_OPENAI_BASE_URL : OPENAI_BASE_URL;
+  const isReasoningModel = /^o\d/i.test(model);
   const body = {
     model,
     messages,
     stream: false,
-    temperature,
-    max_tokens: maxTokens
+    ...(isReasoningModel
+      ? { max_completion_tokens: maxTokens }
+      : { temperature, max_tokens: maxTokens })
   };
   const data = await fetchJson(baseUrl, "/chat/completions", apiKey, {
     method: "POST",
