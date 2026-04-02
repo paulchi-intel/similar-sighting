@@ -377,7 +377,7 @@ async function callChatCompletionApi(apiKey, model, messages, { maxTokens = 700,
 
   // OpenAI-compat model
   const baseUrl = isGnaiKey(apiKey) ? GNAI_OPENAI_BASE_URL : OPENAI_BASE_URL;
-  const isReasoningModel = /^o\d/i.test(model);
+  const isReasoningModel = /^o\d/i.test(model) || /^gpt-5/i.test(model);
   const body = {
     model,
     messages,
